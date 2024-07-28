@@ -82,3 +82,5 @@ public/build
 # vercel
 .vercel
 .turbo
+
+.shopify
