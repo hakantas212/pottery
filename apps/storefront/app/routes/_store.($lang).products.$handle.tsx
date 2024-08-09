@@ -66,7 +66,7 @@ const seo: SeoHandleFunction<typeof loader> = ({ data }) => {
       brand: data?.product?.vendor,
       name: data?.product?.title,
     },
-  } satisfies SeoConfig<Product>;
+  } satisfies SeoConfig;
 };
 
 export const handle = {

@@ -1,8 +1,9 @@
 import { Dialog, Transition } from "@headlessui/react";
 import { Await } from "@remix-run/react";
-import type { Cart } from "@shopify/hydrogen/storefront-api-types";
+import type { Cart, CartLine } from "@shopify/hydrogen/storefront-api-types";
 import clsx from "clsx";
 import { Fragment, Suspense, useState } from "react";
+import { useOptimisticData } from "@shopify/hydrogen";
 
 import {
   CartActions,
@@ -25,11 +26,32 @@ function CartDrawer({
   open,
   onClose,
   cart,
+  storeDomain,
 }: {
   open: boolean;
   onClose: () => void;
   cart: Cart;
+  storeDomain: string;
 }) {
+  const optimisticCartData = useOptimisticData<{
+    action?: string;
+    line?: CartLine;
+    lineId?: string;
+  }>("cart-line-item");
+
+  let totalQuantity = cart?.totalQuantity;
+
+  if (optimisticCartData?.action === "remove" && optimisticCartData?.lineId) {
+    const nextCartLines = cart?.lines?.nodes.filter(
+      (line) => line.id !== optimisticCartData.lineId
+    );
+    if (nextCartLines?.length === 0) {
+      totalQuantity = 0;
+    }
+  } else if (optimisticCartData?.action === "add") {
+    totalQuantity = optimisticCartData?.line?.quantity ?? 0;
+  }
+
   return (
     <Suspense>
       <Await resolve={cart}>
@@ -66,14 +88,11 @@ function CartDrawer({
                     "md:rounded-l-xl"
                   )}
                 >
-                  <CartHeader
-                    numLines={data?.totalQuantity}
-                    onClose={onClose}
-                  />
-                  {data?.totalQuantity > 0 ? (
+                  <CartHeader numLines={totalQuantity} onClose={onClose} />
+                  {totalQuantity > 0 ? (
                     <>
                       <CartLineItems linesObj={data.lines} />
-                      <CartFooter cart={data} />
+                      <CartFooter cart={data} storeDomain={storeDomain} />
                     </>
                   ) : (
                     <CartEmpty onClose={onClose} />
@@ -135,14 +154,19 @@ function CartHeader({
   );
 }
 
-function CartFooter({ cart }: { cart: Cart }) {
+function CartFooter({
+  cart,
+  storeDomain,
+}: {
+  cart: Cart;
+  storeDomain: string;
+}) {
   return (
     <footer className="sticky bottom-0">
       <div className="relative flex flex-col">
         <CartSummary cost={cart.cost} />
-
         <div className="border-t border-gray p-4">
-          <CartActions cart={cart} />
+          <CartActions cart={cart} storeDomain={storeDomain} />
         </div>
       </div>
     </footer>

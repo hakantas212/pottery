@@ -37,7 +37,6 @@ const migrateLabels = async () => {
     .commit()
     .then((res) => {
       // eslint-disable-next-line no-console
-      console.log(res)
     })
     .catch((err) => {
       console.error(err)

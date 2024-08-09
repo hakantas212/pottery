@@ -106,6 +106,7 @@ export default function ProductCard({
                 products: [productAnalytics],
                 totalValue: parseFloat(productAnalytics.price),
               }}
+              selectedVariant={firstVariant}
             >
               <Label _key="cart.quickAdd" />
             </AddToCartButton>

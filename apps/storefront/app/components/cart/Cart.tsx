@@ -1,4 +1,8 @@
-import { CartForm } from "@shopify/hydrogen";
+import {
+  CartForm,
+  OptimisticInput,
+  useOptimisticData,
+} from "@shopify/hydrogen";
 import type {
   Cart,
   CartCost,
@@ -24,6 +28,70 @@ import { useCartFetchers } from "~/hooks/useCartFetchers";
 import { useRootLoaderData } from "~/root";
 
 import { Label } from "../global/Label";
+
+export function Cart({
+  cart,
+  layout,
+  loading,
+  storeDomain,
+  onClose,
+}: {
+  cart?: Cart;
+  layout: "drawer" | "page";
+  loading?: boolean;
+  onClose?: () => void;
+  storeDomain: string;
+}) {
+  let totalQuantity = cart?.totalQuantity;
+  const optimisticData = useOptimisticData<{
+    action?: string;
+    line?: CartLine;
+    lineId?: string;
+  }>("cart-line-item");
+
+  if (optimisticData?.action === "remove" && optimisticData?.lineId) {
+    const nextCartLines = cart?.lines?.nodes.filter(
+      (line) => line.id !== optimisticData.lineId
+    );
+    if (nextCartLines?.length === 0) {
+      totalQuantity = 0;
+    }
+  } else if (optimisticData?.action === "add") {
+    totalQuantity = optimisticData?.line?.quantity;
+  }
+
+  const empty = !cart || Boolean(totalQuantity === 0);
+
+  return (
+    <>
+      {!loading && empty ? (
+        <CartEmpty layout={layout} onClose={onClose} />
+      ) : (
+        <CartDetails cart={cart} layout={layout} onClose={onClose} />
+      )}
+    </>
+  );
+}
+
+function CartDetails({
+  cart,
+  layout,
+  onClose,
+}: {
+  cart?: Cart;
+  layout: "drawer" | "page";
+  onClose?: () => void;
+}) {
+  const { storeDomain } = useRootLoaderData();
+
+  return (
+    <div className="flex flex-col">
+      <CartLineItems linesObj={cart?.lines} />
+      {cart?.cost && <CartSummary cost={cart.cost} />}
+      {cart && <CartActions cart={cart} storeDomain={storeDomain} />}
+    </div>
+  );
+}
 
 export function CartLineItems({
   linesObj,
@@ -51,44 +119,49 @@ function LineItem({
   lineItem: CartLine | ComponentizableCartLine;
 }) {
   const { merchandise } = lineItem;
+  const optimisticId = lineItem.id;
+  const optimisticData = useOptimisticData<{
+    action: string;
+    quantity?: number;
+  }>(optimisticId);
 
   const updatingItems = useCartFetchers(CartForm.ACTIONS.LinesUpdate);
   const removingItems = useCartFetchers(CartForm.ACTIONS.LinesRemove);
 
-  // Check if the line item is being updated, as we want to show the new quantity as optimistic UI
-  let updatingQty;
-  const updating =
-    // eslint-disable-next-line array-callback-return
-    updatingItems?.find((fetcher) => {
-      const formData = fetcher?.formData;
+  // Determine if the line item is currently being updated or removed
+  const isUpdating = updatingItems.some((fetcher) => {
+    const formData = fetcher.formData;
+    if (formData) {
+      const formInputs = CartForm.getFormInput(formData);
+      return (
+        Array.isArray(formInputs?.inputs?.lines) &&
+        formInputs.inputs.lines.some(
+          (line: CartLineUpdateInput) => line.id === lineItem.id
+        )
+      );
+    }
+    return false;
+  });
 
-      if (formData) {
-        const formInputs = CartForm.getFormInput(formData);
-        return (
-          Array.isArray(formInputs?.inputs?.lines) &&
-          formInputs?.inputs?.lines?.find((line: CartLineUpdateInput) => {
-            updatingQty = line.quantity;
-            return line.id === lineItem.id;
-          })
-        );
-      }
-    }) && updatingQty;
-
-  // Check if the line item is being removed, as we want to show the line item as being deleted
-  // eslint-disable-next-line array-callback-return
-  const deleting = removingItems.find((fetcher) => {
-    const formData = fetcher?.formData;
+  const isRemoving = removingItems.some((fetcher) => {
+    const formData = fetcher.formData;
     if (formData) {
       const formInputs = CartForm.getFormInput(formData);
       return (
         Array.isArray(formInputs?.inputs?.lineIds) &&
-        formInputs?.inputs?.lineIds?.find(
-          (lineId: CartLineUpdateInput["id"]) => lineId === lineItem.id
-        )
+        formInputs.inputs.lineIds.includes(lineItem.id)
       );
     }
+    return false;
   });
 
+  // Apply optimistic data and determine final states
+  const isRemoved = optimisticData?.action === "remove" || isRemoving;
+  const quantity = optimisticData?.quantity ?? lineItem.quantity;
+  const isLoading =
+    isUpdating || isRemoving || optimisticData?.action === "add";
+
+  // Check for default variant
   const firstVariant = merchandise.selectedOptions[0];
   const hasDefaultVariantOnly =
     firstVariant.name === "Title" && firstVariant.value === "Default Title";
@@ -98,8 +171,11 @@ function LineItem({
       role="row"
       className={clsx(
         "flex items-center border-b border-lightGray py-3 last:border-b-0",
-        deleting && "opacity-50"
+        isRemoved && "opacity-50"
       )}
+      style={{
+        display: isRemoved ? "none" : "flex",
+      }}
     >
       {/* Image */}
       <div role="cell" className="mr-3 aspect-square w-[66px] flex-shrink-0">
@@ -116,7 +192,7 @@ function LineItem({
         )}
       </div>
 
-      {/* Title */}
+      {/* Title and Options */}
       <div
         role="cell"
         className="flex-grow-1 mr-4 flex w-full flex-col items-start"
@@ -128,7 +204,6 @@ function LineItem({
           {merchandise.product.title}
         </Link>
 
-        {/* Options */}
         {!hasDefaultVariantOnly && (
           <ul className="mt-1 space-y-1 text-xs text-darkGray">
             {merchandise.selectedOptions.map(({ name, value }) => (
@@ -140,48 +215,55 @@ function LineItem({
         )}
       </div>
 
-      {/* Quantity */}
-      <CartItemQuantity line={lineItem} submissionQuantity={updating} />
+      {/* Quantity Controls */}
+      <CartItemQuantity line={lineItem} optimisticId={optimisticId} />
 
       {/* Price */}
       <div className="ml-4 mr-6 flex min-w-[4rem] justify-end text-sm font-bold leading-none">
-        {updating ? (
+        {isLoading ? (
           <SpinnerIcon width={24} height={24} />
         ) : (
           <Money data={lineItem.cost.totalAmount} />
         )}
       </div>
 
+      {/* Remove Button */}
       <div role="cell" className="flex flex-col items-end justify-between">
-        <ItemRemoveButton lineIds={[lineItem.id]} />
+        <ItemRemoveButton lineIds={[lineItem.id]} optimisticId={optimisticId} />
       </div>
     </div>
   );
 }
-
 function CartItemQuantity({
   line,
-  submissionQuantity,
+  optimisticId,
 }: {
   line: CartLine | ComponentizableCartLine;
-  submissionQuantity: number | undefined;
+  optimisticId: string;
 }) {
   if (!line || typeof line?.quantity === "undefined") return null;
   const { id: lineId, quantity } = line;
+  const optimisticData = useOptimisticData<{
+    action: string;
+    quantity?: number;
+  }>(optimisticId);
 
-  // // The below handles optimistic updates for the quantity
-  const lineQuantity = submissionQuantity ? submissionQuantity : quantity;
+  const lineQuantity = optimisticData?.quantity ?? quantity;
 
-  const prevQuantity = Number(Math.max(0, lineQuantity - 1).toFixed(0));
-  const nextQuantity = Number((lineQuantity + 1).toFixed(0));
+  const prevQuantity = Math.max(0, lineQuantity - 1);
+  const nextQuantity = lineQuantity + 1;
 
   return (
     <div className="flex items-center gap-2">
-      <UpdateCartButton lines={[{ id: lineId, quantity: prevQuantity }]}>
+      <UpdateCartButton
+        lines={[{ id: lineId, quantity: prevQuantity }]}
+        optimisticId={optimisticId}
+        currentQuantity={lineQuantity}
+      >
         <button
           aria-label="Decrease quantity"
           value={prevQuantity}
-          disabled={quantity <= 1}
+          disabled={lineQuantity <= 1}
         >
           <MinusCircleIcon />
         </button>
@@ -191,8 +273,12 @@ function CartItemQuantity({
         {lineQuantity}
       </div>
 
-      <UpdateCartButton lines={[{ id: lineId, quantity: nextQuantity }]}>
-        <button aria-label="Increase quantity" value={prevQuantity}>
+      <UpdateCartButton
+        lines={[{ id: lineId, quantity: nextQuantity }]}
+        optimisticId={optimisticId}
+        currentQuantity={lineQuantity}
+      >
+        <button aria-label="Increase quantity" value={nextQuantity}>
           <PlusCircleIcon />
         </button>
       </UpdateCartButton>
@@ -203,10 +289,16 @@ function CartItemQuantity({
 function UpdateCartButton({
   children,
   lines,
+  optimisticId,
+  currentQuantity,
 }: {
   children: React.ReactNode;
   lines: CartLineUpdateInput[];
+  optimisticId: string;
+  currentQuantity: number;
 }) {
+  const newQuantity = lines[0].quantity;
+
   return (
     <CartForm
       route="/cart"
@@ -214,11 +306,21 @@ function UpdateCartButton({
       inputs={{ lines }}
     >
       {children}
+      <OptimisticInput
+        id={optimisticId}
+        data={{ action: "update", quantity: newQuantity }}
+      />
     </CartForm>
   );
 }
 
-function ItemRemoveButton({ lineIds }: { lineIds: CartLine["id"][] }) {
+function ItemRemoveButton({
+  lineIds,
+  optimisticId,
+}: {
+  lineIds: CartLine["id"][];
+  optimisticId: string;
+}) {
   return (
     <CartForm
       route="/cart"
@@ -231,6 +333,7 @@ function ItemRemoveButton({ lineIds }: { lineIds: CartLine["id"][] }) {
       >
         <RemoveIcon />
       </button>
+      <OptimisticInput id={optimisticId} data={{ action: "remove" }} />
     </CartForm>
   );
 }
@@ -271,9 +374,13 @@ export function CartSummary({ cost }: { cost: CartCost }) {
   );
 }
 
-export function CartActions({ cart }: { cart: Cart }) {
-  const { storeDomain } = useRootLoaderData();
-
+export function CartActions({
+  cart,
+  storeDomain,
+}: {
+  cart: Cart;
+  storeDomain: string;
+}) {
   if (!cart || !cart.checkoutUrl) return null;
 
   const shopPayLineItems = flattenConnection(cart.lines).map((line) => ({
@@ -294,6 +401,25 @@ export function CartActions({ cart }: { cart: Cart }) {
       >
         <Label _key="cart.checkout" />
       </Button>
+    </div>
+  );
+}
+
+function CartEmpty({
+  layout,
+  onClose,
+}: {
+  layout: "drawer" | "page";
+  onClose?: () => void;
+}) {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center">
+      <p className="font-semibold mb-6 text-lg">Your cart is empty</p>
+      {onClose && (
+        <button onClick={onClose} className="text-blue-500 hover:text-blue-600">
+          Continue Shopping
+        </button>
+      )}
     </div>
   );
 }

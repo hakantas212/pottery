@@ -56,7 +56,7 @@ export const handle = {
 };
 
 export async function loader({ context }: LoaderFunctionArgs) {
-  const { cart } = context;
+  const { cart, env } = context;
 
   const cache = context.storefront.CacheCustom({
     mode: "public",
@@ -96,6 +96,14 @@ export async function loader({ context }: LoaderFunctionArgs) {
           }
         )
       : undefined,
+    env: {
+      /*
+       * Be careful not to expose any sensitive environment variables here.
+       */
+      PUBLIC_STORE_DOMAIN: env.PUBLIC_STORE_DOMAIN,
+      PUBLIC_STOREFRONT_API_TOKEN: env.PUBLIC_STOREFRONT_API_TOKEN,
+      PUBLIC_STOREFRONT_API_VERSION: env.PUBLIC_STOREFRONT_API_VERSION,
+    },
     sanityProjectID: context.env.SANITY_PROJECT_ID,
     sanityDataset: context.env.SANITY_DATASET || "production",
     selectedLocale,

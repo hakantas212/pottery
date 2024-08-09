@@ -3,6 +3,8 @@ import {
   AnalyticsEventName,
   CartForm,
   getClientBrowserParameters,
+  OptimisticInput,
+  useOptimisticData,
   sendShopifyAnalytics,
   type ShopifyAddToCartPayload,
 } from "@shopify/hydrogen";
@@ -32,26 +34,25 @@ export default function AddToCartButton({
   buttonClassName?: string;
   [key: string]: any;
 }) {
+  const optimisticId = `optimistic-${lines[0].merchandiseId}`;
+
   return (
     // We can't pass a className to CartForm, so we have to wrap it in a div with a className instead
-    <div className={mode == "inline" ? "[&>*]:inline" : ""}>
+    <div className={mode === "inline" ? "[&>*]:inline" : ""}>
       <CartForm
         route={`/cart`}
-        inputs={{
-          lines,
-        }}
         action={CartForm.ACTIONS.LinesAdd}
+        inputs={{ lines }}
       >
         {(fetcher: FetcherWithComponents<any>) => (
-          <AddToCartAnalytics fetcher={fetcher}>
-            <input
-              type="hidden"
-              name="analytics"
-              value={JSON.stringify(analytics)}
+          <>
+            <OptimisticInput
+              id={optimisticId}
+              data={{ action: "add", line: lines[0] }}
             />
             <button
               className={
-                mode == "default"
+                mode === "default"
                   ? twMerge(defaultButtonStyles(), buttonClassName)
                   : buttonClassName
               }
@@ -64,7 +65,7 @@ export default function AddToCartButton({
                 children
               )}
             </button>
-          </AddToCartAnalytics>
+          </>
         )}
       </CartForm>
     </div>
@@ -89,6 +90,7 @@ export function AddToCartLink({
   [key: string]: any;
 }) {
   const fetcher = useFetcher();
+  const optimisticId = `optimistic-${lines[0].merchandiseId}`;
 
   const onClick = () =>
     fetcher.submit(
@@ -105,21 +107,31 @@ export function AddToCartLink({
     );
 
   return (
-    <AddToCartAnalytics fetcher={fetcher}>
-      <button
-        className={
-          mode == "default"
-            ? twMerge(defaultButtonStyles(), buttonClassName)
-            : buttonClassName
-        }
-        onClick={onClick}
-        {...props}
-      >
-        {fetcher.state === "submitting" && loadingContent
-          ? loadingContent
-          : children}
-      </button>
-    </AddToCartAnalytics>
+    <CartForm
+      route="/cart"
+      action={CartForm.ACTIONS.LinesAdd}
+      inputs={{ lines }}
+    >
+      <>
+        <OptimisticInput
+          id={optimisticId}
+          data={{ action: "add", line: lines[0] }}
+        />
+        <button
+          className={
+            mode === "default"
+              ? twMerge(defaultButtonStyles(), buttonClassName)
+              : buttonClassName
+          }
+          onClick={onClick}
+          {...props}
+        >
+          {fetcher.state === "submitting" && loadingContent
+            ? loadingContent
+            : children}
+        </button>
+      </>
+    </CartForm>
   );
 }
 

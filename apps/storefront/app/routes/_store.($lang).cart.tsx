@@ -1,7 +1,7 @@
 import { Await, useMatches } from "@remix-run/react";
 import {
   CartForm,
-  type CartQueryData,
+  type CartQueryDataReturn,
   type SeoHandleFunction,
 } from "@shopify/hydrogen";
 import type { ActionFunctionArgs } from "@shopify/remix-oxygen";
@@ -40,7 +40,7 @@ export async function action({ request, context }: ActionFunctionArgs) {
   invariant(action, "No cartAction defined");
 
   let status = 200;
-  let result: CartQueryData;
+  let result: CartQueryDataReturn;
 
   switch (action) {
     case CartForm.ACTIONS.LinesAdd:
@@ -103,6 +103,7 @@ export async function action({ request, context }: ActionFunctionArgs) {
 
 export default function Cart() {
   const rootData = useRootLoaderData();
+  const { storeDomain } = rootData;
 
   return (
     <section
@@ -128,7 +129,7 @@ export default function Cart() {
                   </div>
                   <div className="fixed bottom-0 left-0 right-0 grid w-full gap-6 p-4 md:sticky md:top-[65px] md:translate-y-4 md:px-6">
                     <CartSummary cost={cart.cost} />
-                    <CartActions cart={cart} />
+                    <CartActions cart={cart} storeDomain={storeDomain} />
                   </div>
                 </div>
               )}
